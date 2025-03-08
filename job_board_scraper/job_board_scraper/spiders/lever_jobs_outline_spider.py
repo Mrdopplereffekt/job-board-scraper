@@ -1,9 +1,5 @@
 import scrapy
-
-# import logging
 import time
-
-import boto3
 import os
 from dotenv import load_dotenv
 from job_board_scraper.spiders.greenhouse_jobs_outline_spider import (
@@ -17,7 +13,6 @@ from scrapy.utils.project import get_project_settings
 from datetime import datetime
 
 load_dotenv()
-# logger = logging.getLogger("logger")
 
 
 class LeverJobsOutlineSpider(GreenhouseJobsOutlineSpider):
@@ -33,8 +28,6 @@ class LeverJobsOutlineSpider(GreenhouseJobsOutlineSpider):
         response_html = self.finalize_response(response)
         selector = Selector(text=response_html, type="html")
         postings_groups = selector.xpath('//div[@class="postings-group"]')
-        # departments = selector.xpath("//div[contains(@class, 'large-category')]/text()")
-        # job_openings = selector.xpath('//a[@class="posting-title"]')
 
         for i, postings_group in enumerate(postings_groups):
             stratified_selector = Selector(text=postings_group.get(), type="html")
@@ -68,13 +61,10 @@ class LeverJobsOutlineSpider(GreenhouseJobsOutlineSpider):
                     item=LeverJobsOutlineItem(),
                     selector=Selector(text=opening.get(), type="html"),
                 )
-                # print(opening.get())
                 self.logger.info(f"Parsing row {i+1}, {self.company_name} {self.name}")
-                # nested = il.nested_xpath('//a[@class="posting-title"]')
 
                 il.add_value("department_names", departments)
                 il.add_xpath("opening_link", '//a[@class="posting-title"]/@href')
-                # nested.add_xpath("opening_link", "@href")
                 il.add_xpath("opening_title", "//h5/text()")
                 il.add_xpath(
                     "workplace_type", "//span[contains(@class, 'workplaceType')]/text()"
@@ -87,8 +77,5 @@ class LeverJobsOutlineSpider(GreenhouseJobsOutlineSpider):
                 il.add_value("source", self.html_source)
                 il.add_value("company_name", self.company_name)
                 il.add_value("run_hash", self.run_hash)
-                il.add_value("raw_html_file_location", self.full_s3_html_path)
-                il.add_value("existing_html_used", self.existing_html_used)
 
                 yield il.load_item()
-            # self.logger.info(f"{dep_xpath} Department here")

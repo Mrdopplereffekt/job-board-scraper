@@ -10,10 +10,8 @@ from job_board_scraper.utils import pipline_util
 
 from io import BytesIO
 from dotenv import load_dotenv
-from botocore.exceptions import ClientError
 
 import os
-import boto3
 import logging
 import psycopg2
 
