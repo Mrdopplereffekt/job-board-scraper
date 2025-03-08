@@ -77,7 +77,7 @@ def initialize_database():
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS company_urls (
         id SERIAL PRIMARY KEY,
-        url VARCHAR(255) NOT NULL,
+        url VARCHAR(255) NOT NULL UNIQUE,
         is_enabled BOOLEAN DEFAULT TRUE,
         company_name VARCHAR(255),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -129,10 +129,13 @@ def initialize_database():
         ]
         
         for url, company_name in default_urls:
-            cursor.execute(
-                "INSERT INTO company_urls (url, company_name) VALUES (%s, %s) ON CONFLICT (url) DO NOTHING;",
-                (url, company_name)
-            )
+            try:
+                cursor.execute(
+                    "INSERT INTO company_urls (url, company_name) VALUES (%s, %s) ON CONFLICT (url) DO NOTHING;",
+                    (url, company_name)
+                )
+            except Exception as e:
+                logger.error(f"Error inserting URL {url}: {str(e)}")
         
         logger.info(f"Added {len(default_urls)} default company URLs.")
     
