@@ -17,6 +17,11 @@ from job_board_scraper.utils import general as util
 from job_board_scraper.utils.scraper_util import get_url_chunks
 from scrapy.utils.project import get_project_settings
 
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger("logger")
 run_hash = util.hash_ids.encode(int(time.time()))
 
@@ -108,6 +113,29 @@ def initialize_database():
     );
     """)
     
+    # Check if we have any company URLs
+    cursor.execute("SELECT COUNT(*) FROM company_urls;")
+    url_count = cursor.fetchone()[0]
+    
+    # If no URLs exist, add some default ones for testing
+    if url_count == 0:
+        logger.info("No company URLs found. Adding some default Greenhouse URLs for testing.")
+        default_urls = [
+            ("https://boards.greenhouse.io/netflix", "Netflix"),
+            ("https://boards.greenhouse.io/spotify", "Spotify"),
+            ("https://boards.greenhouse.io/airbnb", "Airbnb"),
+            ("https://boards.greenhouse.io/doordash", "DoorDash"),
+            ("https://boards.greenhouse.io/stripe", "Stripe")
+        ]
+        
+        for url, company_name in default_urls:
+            cursor.execute(
+                "INSERT INTO company_urls (url, company_name) VALUES (%s, %s) ON CONFLICT (url) DO NOTHING;",
+                (url, company_name)
+            )
+        
+        logger.info(f"Added {len(default_urls)} default company URLs.")
+    
     connection.commit()
     cursor.close()
     connection.close()
@@ -131,6 +159,33 @@ def execute_query(query):
     return results
 
 
+def run_single_spider(url):
+    """Run a single spider without multiprocessing"""
+    logger.info(f"Running single spider for URL: {url}")
+    process = CrawlerProcess(get_project_settings())
+    if url.split(".")[1] == "greenhouse":
+        process.crawl(
+            GreenhouseJobDepartmentsSpider,
+            careers_page_url=url,
+            run_hash=run_hash,
+            url_id=0,
+        )
+        process.crawl(
+            GreenhouseJobsOutlineSpider,
+            careers_page_url=url,
+            run_hash=run_hash,
+            url_id=0,
+        )
+    elif url.split(".")[1] == "lever" and LEVER_AVAILABLE:
+        process.crawl(
+            LeverJobsOutlineSpider,
+            careers_page_url=url,
+            run_hash=run_hash,
+            url_id=0,
+        )
+    process.start()
+
+
 if __name__ == "__main__":
     # Initialize the database tables
     initialize_database()
@@ -145,9 +200,23 @@ if __name__ == "__main__":
         
         # Execute the query directly
         urls_to_scrape = execute_query(query_string)
+        logger.info(f"Found {len(urls_to_scrape)} URLs to scrape")
+        
+        if not urls_to_scrape:
+            logger.warning("No URLs found to scrape. Please add URLs to the company_urls table.")
+            sys.exit(0)
         
         chunks = get_url_chunks(urls_to_scrape, chunk_size)
-        multiprocessing.Pool(len(chunks)).starmap(run_spider, enumerate(chunks))
+        logger.info(f"Split URLs into {len(chunks)} chunks of size {chunk_size}")
+        
+        if len(chunks) > 0:
+            # Use multiprocessing if we have multiple chunks
+            multiprocessing.Pool(max(1, len(chunks))).starmap(run_spider, enumerate(chunks))
+        else:
+            logger.warning("get_url_chunks returned empty list. Running without multiprocessing.")
+            # If we have URLs but chunks is empty, run for the first URL
+            if urls_to_scrape:
+                run_single_spider(urls_to_scrape[0][0])
     except Exception as e:
         logger.error(f"Error in main: {e}")
         raise e
