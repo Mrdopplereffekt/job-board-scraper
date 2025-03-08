@@ -74,16 +74,40 @@ def initialize_database():
     cursor = connection.cursor()
     
     # Create the company URLs table if it doesn't exist
+    # Adding a UNIQUE constraint to the url column
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS company_urls (
         id SERIAL PRIMARY KEY,
-        url VARCHAR(255) NOT NULL UNIQUE,
+        url VARCHAR(255) NOT NULL,
         is_enabled BOOLEAN DEFAULT TRUE,
         company_name VARCHAR(255),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
     """)
+    
+    # Check if the table exists and has the UNIQUE constraint
+    try:
+        # Try to add UNIQUE constraint to the url column if it doesn't already exist
+        cursor.execute("""
+        DO $$
+        BEGIN
+            -- Check if constraint exists
+            IF NOT EXISTS (
+                SELECT 1 
+                FROM pg_constraint 
+                WHERE conname = 'company_urls_url_key'
+            ) THEN
+                -- Add unique constraint if it doesn't exist
+                ALTER TABLE company_urls ADD CONSTRAINT company_urls_url_key UNIQUE (url);
+            END IF;
+        END $$;
+        """)
+        connection.commit()
+        logger.info("Ensured UNIQUE constraint on url column")
+    except Exception as e:
+        logger.error(f"Error ensuring UNIQUE constraint: {str(e)}")
+        connection.rollback()
     
     # Create job posting tables if they don't exist
     cursor.execute("""
@@ -112,6 +136,7 @@ def initialize_database():
         run_hash VARCHAR(255)
     );
     """)
+    connection.commit()
     
     # Check if we have any company URLs
     cursor.execute("SELECT COUNT(*) FROM company_urls;")
@@ -130,16 +155,22 @@ def initialize_database():
         
         for url, company_name in default_urls:
             try:
+                # Simpler insert without ON CONFLICT to avoid issues
                 cursor.execute(
-                    "INSERT INTO company_urls (url, company_name) VALUES (%s, %s) ON CONFLICT (url) DO NOTHING;",
+                    "INSERT INTO company_urls (url, company_name) VALUES (%s, %s);",
                     (url, company_name)
                 )
+                connection.commit()
+                logger.info(f"Added URL {url}")
+            except psycopg2.errors.UniqueViolation:
+                connection.rollback()
+                logger.info(f"URL {url} already exists, skipping")
             except Exception as e:
+                connection.rollback()
                 logger.error(f"Error inserting URL {url}: {str(e)}")
         
-        logger.info(f"Added {len(default_urls)} default company URLs.")
+        logger.info(f"Added default company URLs.")
     
-    connection.commit()
     cursor.close()
     connection.close()
 
