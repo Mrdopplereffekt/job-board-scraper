@@ -26,5 +26,18 @@ ENV PYTHONUNBUFFERED=1
 ENV CHUNK_SIZE=1
 ENV PAGES_TO_SCRAPE_QUERY="select distinct url from company_urls where is_enabled=true;"
 
-# Run the scraper every 24 hours
-CMD ["sh", "-c", "python job_board_scraper/run_job_scraper.py && sleep 86400"] 
+# Create a startup script
+RUN echo '#!/bin/bash\n\
+if [ "$1" = "find_companies" ]; then\n\
+  python job_board_scraper/find_companies.py --all\n\
+elif [ "$1" = "job_scraper" ]; then\n\
+  python job_board_scraper/run_job_scraper.py\n\
+else\n\
+  # Default behavior - run job scraper every 24 hours\n\
+  python job_board_scraper/run_job_scraper.py && sleep 86400\n\
+fi' > /app/start.sh
+
+RUN chmod +x /app/start.sh
+
+# Default command - can be overridden with custom start command
+CMD ["/app/start.sh"] 
