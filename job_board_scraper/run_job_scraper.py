@@ -113,14 +113,39 @@ def initialize_database():
     connection.close()
 
 
+def execute_query(query):
+    """Execute a query and return the results"""
+    connection = psycopg2.connect(
+        host=os.environ.get("PG_HOST"),
+        user=os.environ.get("PG_USER"),
+        password=os.environ.get("PG_PASSWORD"),
+        dbname=os.environ.get("PG_DATABASE"),
+    )
+    
+    cursor = connection.cursor()
+    cursor.execute(query)
+    results = cursor.fetchall()
+    cursor.close()
+    connection.close()
+    
+    return results
+
+
 if __name__ == "__main__":
     # Initialize the database tables
     initialize_database()
     
     chunk_size = int(os.environ.get("CHUNK_SIZE", 1))
     try:
-        postgres_wrapper = PostgresWrapper()
-        urls_to_scrape = postgres_wrapper.query(os.environ.get("PAGES_TO_SCRAPE_QUERY", "select distinct url from company_urls where is_enabled=true;"))
+        # Get the query to retrieve URLs to scrape
+        query_string = os.environ.get(
+            "PAGES_TO_SCRAPE_QUERY", 
+            "select distinct url from company_urls where is_enabled=true;"
+        )
+        
+        # Execute the query directly
+        urls_to_scrape = execute_query(query_string)
+        
         chunks = get_url_chunks(urls_to_scrape, chunk_size)
         multiprocessing.Pool(len(chunks)).starmap(run_spider, enumerate(chunks))
     except Exception as e:
