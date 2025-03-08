@@ -12,15 +12,13 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Uncomment this to save results to CSV directly instead of database
 # FEEDS = {"data.csv": {"format": "csv", "overwrite": True}}
 
 BOT_NAME = "job_board_scraper"
 
 SPIDER_MODULES = ["job_board_scraper.spiders"]
 NEWSPIDER_MODULE = "job_board_scraper.spiders"
-
-S3_HTML_BUCKET = os.environ.get("RAW_HTML_S3_BUCKET")
-S3_HTML_PATH = "scrapy/{source}/{bot_name}/{partitions}/{file_name}"
 
 DEFAULT_HTML = "https://blank.org"
 

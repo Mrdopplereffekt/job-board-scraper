@@ -30,14 +30,12 @@ def run_spider(single_url_chunk, chunk_number):
             process.crawl(
                 GreenhouseJobDepartmentsSpider,
                 careers_page_url=careers_page_url,
-                use_existing_html=False,
                 run_hash=run_hash,
                 url_id=chunk_number * len(single_url_chunk) + i,
             )
             process.crawl(
                 GreenhouseJobsOutlineSpider,
                 careers_page_url=careers_page_url,
-                use_existing_html=False,
                 run_hash=run_hash,
                 url_id=chunk_number * len(single_url_chunk) + i,
             )
@@ -45,38 +43,79 @@ def run_spider(single_url_chunk, chunk_number):
             process.crawl(
                 LeverJobsOutlineSpider,
                 careers_page_url=careers_page_url,
-                use_existing_html=False,
                 run_hash=run_hash,
                 url_id=chunk_number * len(single_url_chunk) + i,
             )
     process.start()
 
 
-if __name__ == "__main__":
-    chunk_size = int(os.environ.get("CHUNK_SIZE"))
-
+# Function to initialize the database with company URLs
+def initialize_database():
+    # Connect to the database
     connection = psycopg2.connect(
         host=os.environ.get("PG_HOST"),
         user=os.environ.get("PG_USER"),
         password=os.environ.get("PG_PASSWORD"),
         dbname=os.environ.get("PG_DATABASE"),
     )
+    
     cursor = connection.cursor()
-    cursor.execute(os.environ.get("PAGES_TO_SCRAPE_QUERY"))
-    careers_page_urls = cursor.fetchall()
+    
+    # Create the company URLs table if it doesn't exist
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS company_urls (
+        id SERIAL PRIMARY KEY,
+        url VARCHAR(255) NOT NULL,
+        is_enabled BOOLEAN DEFAULT TRUE,
+        company_name VARCHAR(255),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+    
+    # Create job posting tables if they don't exist
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS greenhouse_job_departments (
+        id VARCHAR(255) PRIMARY KEY,
+        department_id VARCHAR(255),
+        department_name VARCHAR(255),
+        department_category VARCHAR(255),
+        created_at BIGINT,
+        updated_at BIGINT,
+        source VARCHAR(255),
+        company_name VARCHAR(255),
+        run_hash VARCHAR(255)
+    );
+    
+    CREATE TABLE IF NOT EXISTS greenhouse_jobs_outline (
+        id VARCHAR(255) PRIMARY KEY,
+        department_ids VARCHAR(255),
+        office_ids VARCHAR(255),
+        opening_title VARCHAR(255),
+        opening_link VARCHAR(1024),
+        location VARCHAR(255),
+        created_at BIGINT,
+        updated_at BIGINT,
+        source VARCHAR(255),
+        run_hash VARCHAR(255)
+    );
+    """)
+    
+    connection.commit()
     cursor.close()
     connection.close()
-    url_chunks = get_url_chunks(careers_page_urls, chunk_size)
 
-    num_processes = len(url_chunks)
-    processes = []
 
-    for i, single_url_chunk in enumerate(url_chunks):
-        time.sleep(60)  # sleep to avoid issues exporting to Postgres
-        p = multiprocessing.Process(target=run_spider, args=(single_url_chunk, i))
-        processes.append(p)
-        p.start()
-
-    for p in processes:
-        time.sleep(60)  # sleep to avoid issues exporting to Postgres
-        p.join()
+if __name__ == "__main__":
+    # Initialize the database tables
+    initialize_database()
+    
+    chunk_size = int(os.environ.get("CHUNK_SIZE", 1))
+    try:
+        postgres_wrapper = PostgresWrapper()
+        urls_to_scrape = postgres_wrapper.query(os.environ.get("PAGES_TO_SCRAPE_QUERY", "select distinct url from company_urls where is_enabled=true;"))
+        chunks = get_url_chunks(urls_to_scrape, chunk_size)
+        multiprocessing.Pool(len(chunks)).starmap(run_spider, enumerate(chunks))
+    except Exception as e:
+        logger.error(f"Error in main: {e}")
+        raise e

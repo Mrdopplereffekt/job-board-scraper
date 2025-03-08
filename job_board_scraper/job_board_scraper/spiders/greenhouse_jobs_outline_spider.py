@@ -1,9 +1,5 @@
 import scrapy
-
-# import logging
 import time
-
-import boto3
 import os
 from dotenv import load_dotenv
 from job_board_scraper.items import GreenhouseJobsOutlineItem
@@ -17,8 +13,6 @@ from scrapy.utils.project import get_project_settings
 from datetime import datetime
 
 load_dotenv()
-# logger = logging.getLogger("logger")
-
 
 class GreenhouseJobsOutlineSpider(GreenhouseJobDepartmentsSpider):
     name = "greenhouse_jobs_outline"
@@ -27,7 +21,6 @@ class GreenhouseJobsOutlineSpider(GreenhouseJobDepartmentsSpider):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.spider_id = kwargs.pop("spider_id", 2)
-        self.use_existing_html = kwargs.pop("use_existing_html", 1)  # from departments
         self.logger.info(f"Initialized Spider, {self.html_source}")
         self.page_number = 1
 
@@ -49,10 +42,8 @@ class GreenhouseJobsOutlineSpider(GreenhouseJobDepartmentsSpider):
             item=GreenhouseJobsOutlineItem(),
             selector=Selector(text=opening.get(), type="html"),
         )
-        # self.logger.info(f"Parsing row {j+1}, {self.company_name} {self.name}")
 
         il.add_value("department_ids", department_ids)
-        # nested.add_xpath("office_ids", "@office_id")
         il.add_xpath("opening_link", "//a/@href")
         il.add_xpath("opening_title", "//p[contains(@class, 'body--medium')]/text()")
         il.add_xpath("location", "//p[contains(@class, 'body--metadata')]/text()")
@@ -67,10 +58,6 @@ class GreenhouseJobsOutlineSpider(GreenhouseJobDepartmentsSpider):
         il.add_value("updated_at", self.updated_at)
         il.add_value("source", self.html_source)
         il.add_value("run_hash", self.run_hash)
-        il.add_value("raw_html_file_location", self.full_s3_html_path)
-        il.add_value("existing_html_used", self.existing_html_used)
-
-        # yield il.load_item()
 
         return il
 
@@ -117,7 +104,5 @@ class GreenhouseJobsOutlineSpider(GreenhouseJobDepartmentsSpider):
                 il.add_value("updated_at", self.updated_at)
                 il.add_value("source", self.html_source)
                 il.add_value("run_hash", self.run_hash)
-                il.add_value("raw_html_file_location", self.full_s3_html_path)
-                il.add_value("existing_html_used", self.existing_html_used)
 
                 yield il.load_item()
