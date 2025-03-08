@@ -307,32 +307,79 @@ class CompanyURLFinder:
         logger.info(f"Completed Lever job boards discovery. Found {companies_found} companies.")
         return companies_found
     
-    def add_company(self, company_name, job_board_url, job_board_type):
-        """Add a company to the database"""
+    def add_company(self, company_name, url, board_type):
+        """Add a company URL to the database after verifying it"""
+        # Skip if already checked this URL
+        if url in self.checked_urls:
+            return True
+        
+        # Add to checked URLs set
+        self.checked_urls.add(url)
+        
+        # Verify the URL first
         try:
-            # Insert into company_urls table for the scraper
+            headers = {'User-Agent': self.get_random_user_agent()}
+            
+            # Try HEAD request first
+            try:
+                response = requests.head(url, headers=headers, timeout=10, allow_redirects=True)
+                request_type = "HEAD"
+            except requests.exceptions.RequestException:
+                # If HEAD fails, try GET with stream=True to avoid downloading all content
+                response = requests.get(url, headers=headers, timeout=15, allow_redirects=True, stream=True)
+                response.close()  # Close to avoid downloading everything
+                request_type = "GET"
+            
+            # Only add valid URLs (200-399 status codes)
+            if 200 <= response.status_code < 400:
+                is_enabled = True
+                logger.info(f"Verified URL ({request_type}): {url} (Status: {response.status_code})")
+            else:
+                is_enabled = False
+                logger.warning(f"Invalid URL will be disabled ({request_type}): {url} (Status: {response.status_code})")
+                
+            # Add to database with appropriate is_enabled value
             with self.conn.cursor() as cursor:
-                cursor.execute("""
-                INSERT INTO company_urls (url, company_name)
-                VALUES (%s, %s)
-                ON CONFLICT (url) DO NOTHING
-                RETURNING id
-                """, (job_board_url, company_name))
-                
-                result = cursor.fetchone()
+                cursor.execute(
+                    """
+                    INSERT INTO company_urls (url, company_name, is_enabled)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (url) 
+                    DO UPDATE SET 
+                        company_name = EXCLUDED.company_name,
+                        is_enabled = EXCLUDED.is_enabled,
+                        updated_at = CURRENT_TIMESTAMP
+                    RETURNING id;
+                    """,
+                    (url, company_name, is_enabled)
+                )
                 self.conn.commit()
-                
-                # If a new row was inserted, track this company and URL
+                result = cursor.fetchone()
                 if result:
-                    self.checked_companies.add(company_name.lower())
-                    self.checked_urls.add(job_board_url)
-                    return True
-                    
-                return False
+                    logger.info(f"Added/updated company: {company_name}, URL: {url} (ID: {result[0]})")
+                return True
                 
-        except Exception as e:
-            self.conn.rollback()
-            logger.error(f"Error adding company {company_name}: {str(e)}")
+        except requests.exceptions.RequestException as e:
+            logger.warning(f"Error verifying URL {url}: {str(e)}")
+            # Add to database but mark as disabled
+            with self.conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO company_urls (url, company_name, is_enabled)
+                    VALUES (%s, %s, false)
+                    ON CONFLICT (url) 
+                    DO UPDATE SET 
+                        company_name = EXCLUDED.company_name,
+                        is_enabled = false,
+                        updated_at = CURRENT_TIMESTAMP
+                    RETURNING id;
+                    """,
+                    (url, company_name)
+                )
+                self.conn.commit()
+                result = cursor.fetchone()
+                if result:
+                    logger.info(f"Added disabled company: {company_name}, URL: {url} (ID: {result[0]})")
             return False
     
     def search_companies(self, query, board_type, max_results=50):
