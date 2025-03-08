@@ -35,6 +35,8 @@ except ImportError:
 
 
 def run_spider(single_url_chunk, chunk_number):
+    """Run spiders for a chunk of URLs"""
+    logger.info(f"Processing chunk {chunk_number} with {len(single_url_chunk)} URLs")
     process = CrawlerProcess(get_project_settings())
     for i, careers_page_url in enumerate(single_url_chunk):
         logger.info(f"url = {careers_page_url}")
@@ -245,7 +247,12 @@ if __name__ == "__main__":
         
         if len(chunks) > 0:
             # Use multiprocessing if we have multiple chunks
-            multiprocessing.Pool(max(1, len(chunks))).starmap(run_spider, enumerate(chunks))
+            # Create a list of arguments for starmap
+            starmap_args = [(chunk, i) for i, chunk in enumerate(chunks)]
+            pool = multiprocessing.Pool(max(1, len(chunks)))
+            pool.starmap(run_spider, starmap_args)
+            pool.close()
+            pool.join()
         else:
             logger.warning("get_url_chunks returned empty list. Running without multiprocessing.")
             # If we have URLs but chunks is empty, run for the first URL
